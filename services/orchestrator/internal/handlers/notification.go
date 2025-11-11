@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -33,10 +34,9 @@ func (h *NotificationHandler) Create(c *gin.Context) {
 		)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
-				"code":       "INVALID_REQUEST",
-				"message":    "Invalid request payload",
-				"details":    gin.H{"validation_error": err.Error()},
-				"request_id": requestID,
+				"success": false,
+				"message": "Invalid request payload",
+				"error":   gin.H{"validation_error": err.Error()},
 			},
 		})
 		return
@@ -51,10 +51,9 @@ func (h *NotificationHandler) Create(c *gin.Context) {
 		)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": gin.H{
-				"code":       "INTERNAL_ERROR",
-				"message":    "Failed to process notification",
-				"details":    gin.H{"error": err.Error()},
-				"request_id": requestID,
+				"success": false,
+				"message": "Failed to process notification",
+				"error":   gin.H{"internal server error": err.Error()},
 			},
 		})
 		return
@@ -69,4 +68,63 @@ func (h *NotificationHandler) Create(c *gin.Context) {
 	}
 
 	c.JSON(statusCode, response)
+}
+
+// UpdateStatus handles POST /api/v1/notifications/:id/status for updating notification status.
+func (h *NotificationHandler) UpdateStatus(c *gin.Context) {
+	notificationID := c.Param("id")
+	requestID, _ := c.Get("request_id")
+
+	// Define a struct to bind the status update payload
+	var req struct {
+		NotificationID string    `json:"notification_id" binding:"required"`
+		Status         string    `json:"status" binding:"required,oneof=delivered pending failed"`
+		Timestamp      time.Time `json:"timestamp"`
+		Error          string    `json:"error,omitempty"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Log.Error("Invalid status update payload",
+			zap.String("request_id", requestID.(string)),
+			zap.Error(err),
+		)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"success": false,
+				"message": "Invalid request payload for user creation",
+				"error":   gin.H{"validation_error": err.Error()},
+			},
+		})
+		return
+	}
+
+	// Basic path validation
+	if req.NotificationID != notificationID {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"success": false,
+				"message": "Notification ID in path does not match payload ID",
+				"error":   gin.H{"validation error": req.Error},
+			},
+		})
+		return
+	}
+
+	logger.Log.Info("Notification status updated",
+		zap.String("notification_id", notificationID),
+		zap.String("status", req.Status),
+		zap.String("request_id", requestID.(string)),
+	)
+
+	// TODO: Implement logic to update status in persistent storage (e.g., database)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": fmt.Sprintf("Status update received for notification %s: %s", notificationID, req.Status),
+		"data": gin.H{
+			"notification_id": notificationID,
+			"status":          "received",
+			"created_at":      time.Now(),
+		},
+	})
 }

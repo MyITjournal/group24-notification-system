@@ -14,6 +14,7 @@ import (
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/middleware"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/mocks"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/services"
+	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/pkg/kafka"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -34,18 +35,41 @@ func main() {
 		zap.Bool("mock_services", cfg.Services.UseMockServices),
 	)
 
+	// Initialize Kafka Manager
+	kafkaManager, err := kafka.NewManager(kafka.ManagerConfig{
+		Brokers:    cfg.Kafka.Brokers,
+		EmailTopic: cfg.Kafka.EmailTopic,
+		PushTopic:  cfg.Kafka.PushTopic,
+		Logger:     logger.Log,
+	})
+	if err != nil {
+		logger.Log.Fatal("Failed to initialize Kafka manager", zap.Error(err))
+	}
+	defer kafkaManager.Close()
+
+	logger.Log.Info("Kafka manager initialized",
+		zap.Strings("brokers", cfg.Kafka.Brokers),
+		zap.String("email_topic", cfg.Kafka.EmailTopic),
+		zap.String("push_topic", cfg.Kafka.PushTopic),
+	)
+
 	// Initialize clients (using mocks for now)
 	var userClient = mocks.NewUserServiceMock()
 	var templateClient = mocks.NewTemplateServiceMock()
 
 	logger.Log.Info("Using mock services for development")
 
-	// Initialize services
-	orchestrationService := services.NewOrchestrationService(userClient, templateClient)
+	// Initialize services with Kafka
+	orchestrationService := services.NewOrchestrationService(
+		userClient,
+		templateClient,
+		kafkaManager,
+	)
 
 	// Initialize handlers
 	healthHandler := handlers.NewHealthHandler()
 	notificationHandler := handlers.NewNotificationHandler(orchestrationService)
+	userHandler := handlers.NewUserHandler()
 
 	// Setup Gin router
 	if cfg.Logging.Format == "json" {
@@ -60,13 +84,17 @@ func main() {
 	// Health check endpoints
 	router.GET("/health/live", healthHandler.Live)
 	router.GET("/health/ready", healthHandler.Ready)
-	router.GET("/health", healthHandler.Live) // Simple health check
+	router.GET("/health", healthHandler.Live)
 
 	// API v1 routes
 	v1 := router.Group("/api/v1")
 	{
 		// Notification endpoints
 		v1.POST("/notifications", notificationHandler.Create)
+		v1.POST("/notifications/:id/status", notificationHandler.UpdateStatus)
+
+		// User management
+		v1.POST("/users", userHandler.Create)
 	}
 
 	// Create HTTP server

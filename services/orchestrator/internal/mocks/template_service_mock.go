@@ -31,7 +31,7 @@ func (m *TemplateServiceMock) GetTemplate(templateID, language string) (*models.
 				{Name: "user_name", Type: "string", Required: true, Description: "User's display name"},
 				{Name: "app_name", Type: "string", Required: true, Description: "Application name"},
 			},
-			Metadata: models.TemplateMetadata{
+			Meta: models.TemplateMetadata{
 				CreatedAt: time.Now().Add(-90 * 24 * time.Hour),
 				UpdatedAt: time.Now().Add(-5 * 24 * time.Hour),
 				CreatedBy: "admin@example.com",
@@ -53,7 +53,7 @@ func (m *TemplateServiceMock) GetTemplate(templateID, language string) (*models.
 				{Name: "app_name", Type: "string", Required: true, Description: "Application name"},
 				{Name: "reset_url", Type: "string", Required: true, Description: "Password reset URL"},
 			},
-			Metadata: models.TemplateMetadata{
+			Meta: models.TemplateMetadata{
 				CreatedAt: time.Now().Add(-180 * 24 * time.Hour),
 				UpdatedAt: time.Now().Add(-30 * 24 * time.Hour),
 				CreatedBy: "admin@example.com",
@@ -76,7 +76,7 @@ func (m *TemplateServiceMock) RenderTemplate(templateID, language string, variab
 	}
 
 	// Simple variable substitution
-	renderedSubject := template.Subject
+	renderedSubject := template.Subject // Get subject to render variables
 	renderedHTML := template.Body.HTML
 	renderedText := template.Body.Text
 
@@ -85,16 +85,19 @@ func (m *TemplateServiceMock) RenderTemplate(templateID, language string, variab
 		placeholder := fmt.Sprintf("{{%s}}", key)
 		valueStr := fmt.Sprintf("%v", value)
 
+		// Substitute in Subject
 		if strings.Contains(renderedSubject, placeholder) {
 			renderedSubject = strings.ReplaceAll(renderedSubject, placeholder, valueStr)
 			variablesUsed = append(variablesUsed, key)
 		}
+		// Substitute in HTML Body
 		if strings.Contains(renderedHTML, placeholder) {
 			renderedHTML = strings.ReplaceAll(renderedHTML, placeholder, valueStr)
 			if !contains(variablesUsed, key) {
 				variablesUsed = append(variablesUsed, key)
 			}
 		}
+		// Substitute in Text Body
 		if strings.Contains(renderedText, placeholder) {
 			renderedText = strings.ReplaceAll(renderedText, placeholder, valueStr)
 			if !contains(variablesUsed, key) {
@@ -107,9 +110,12 @@ func (m *TemplateServiceMock) RenderTemplate(templateID, language string, variab
 		TemplateID: templateID,
 		Language:   language,
 		Version:    template.Version,
-		Rendered: models.TemplateBody{
-			HTML: renderedHTML,
-			Text: renderedText,
+		Rendered: models.RenderedContent{
+			Subject: renderedSubject,
+			Body: models.TemplateBody{
+				HTML: renderedHTML,
+				Text: renderedText,
+			},
 		},
 		RenderedAt:    time.Now(),
 		VariablesUsed: variablesUsed,

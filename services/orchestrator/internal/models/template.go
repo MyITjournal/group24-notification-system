@@ -11,7 +11,7 @@ type Template struct {
 	Subject    string             `json:"subject,omitempty"`
 	Body       TemplateBody       `json:"body"`
 	Variables  []TemplateVariable `json:"variables"`
-	Metadata   TemplateMetadata   `json:"metadata"`
+	Meta       TemplateMetadata   `json:"metadata"`
 }
 
 type TemplateBody struct {
@@ -40,11 +40,18 @@ type RenderRequest struct {
 	PreviewMode bool                   `json:"preview_mode"`
 }
 
+// Struct for the 'rendered' field in the Render Template response (2.2)
+type RenderedContent struct {
+	Subject string       `json:"subject,omitempty"`
+	Body    TemplateBody `json:"body"`
+}
+
+// Updated RenderResponse struct to match 2.2 Success Response (200 OK)
 type RenderResponse struct {
-	TemplateID    string       `json:"template_id"`
-	Language      string       `json:"language"`
-	Version       string       `json:"version"`
-	Rendered      TemplateBody `json:"rendered"`
-	RenderedAt    time.Time    `json:"rendered_at"`
-	VariablesUsed []string     `json:"variables_used"`
+	TemplateID    string          `json:"template_id"`
+	Language      string          `json:"language"`
+	Version       string          `json:"version"`
+	Rendered      RenderedContent `json:"rendered"` // Use the new struct
+	RenderedAt    time.Time       `json:"rendered_at"`
+	VariablesUsed []string        `json:"variables_used"`
 }

@@ -3,31 +3,44 @@ package models
 import "time"
 
 type NotificationRequest struct {
-	UserID       string                 `json:"user_id" binding:"required"`
-	TemplateID   string                 `json:"template_id" binding:"required"`
-	Channel      string                 `json:"channel" binding:"required,oneof=email push sms"`
-	Variables    map[string]interface{} `json:"variables"`
-	Priority     string                 `json:"priority,omitempty"` // high, normal, low
-	ScheduledFor *time.Time             `json:"scheduled_for,omitempty"`
+	ID               string                 `json:"id" binding:"required"`
+	NotificationType NotificationType       `json:"notification_type" binding:"required,oneof=email push"`
+	UserID           string                 `json:"user_id" binding:"required"`
+	TemplateCode     string                 `json:"template_code" binding:"required"`
+	Variables        map[string]interface{} `json:"variables"`
+	Priority         string                 `json:"priority,omitempty"`
+	ScheduledFor     *time.Time             `json:"scheduled_for,omitempty"`
+	Metadata         map[string]interface{} `json:"metadata,omitempty"`
 }
+
+type NotificationType string
+
+const (
+	NotificationEmail NotificationType = "email"
+	NotificationPush  NotificationType = "push"
+)
 
 type NotificationResponse struct {
-	NotificationID string    `json:"notification_id"`
-	Status         string    `json:"status"`
-	Message        string    `json:"message,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
+	NotificationID string             `json:"notification_id"`
+	Status         NotificationStatus `json:"status"`
+	Timestamp      time.Time          `json:"timestamp"`
+	Error          string             `json:"error,omitempty"`
 }
 
+type NotificationStatus string
+
+const (
+	StatusDelivered NotificationStatus = "delivered"
+	StatusPending   NotificationStatus = "pending"
+	StatusFailed    NotificationStatus = "failed"
+)
+
 type Notification struct {
-	ID         string                 `json:"id"`
-	UserID     string                 `json:"user_id"`
-	TemplateID string                 `json:"template_id"`
-	Channel    string                 `json:"channel"`
-	To         string                 `json:"to"` // email address or device token
-	Subject    string                 `json:"subject,omitempty"`
-	Body       string                 `json:"body"`
-	Variables  map[string]interface{} `json:"variables"`
-	Priority   string                 `json:"priority"`
-	Status     string                 `json:"status"`
-	CreatedAt  time.Time              `json:"created_at"`
+	NotificationType string                 `json:"notification_type"`
+	UserID           string                 `json:"user_id"`
+	TemplateCode     string                 `json:"template_code"`
+	Variables        map[string]interface{} `json:"variables"`
+	RequestID        string                 `json:"request_id"`
+	Priority         string                 `json:"priority"`
+	Metadata         map[string]interface{} `json:"metadata,omitempty"`
 }

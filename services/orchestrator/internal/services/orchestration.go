@@ -1,11 +1,13 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/clients"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/models"
+	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/pkg/kafka"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/pkg/logger"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -14,23 +16,30 @@ import (
 type OrchestrationService struct {
 	userClient     clients.UserClient
 	templateClient clients.TemplateClient
+	kafkaManager   *kafka.Manager
 }
 
-func NewOrchestrationService(userClient clients.UserClient, templateClient clients.TemplateClient) *OrchestrationService {
+func NewOrchestrationService(
+	userClient clients.UserClient,
+	templateClient clients.TemplateClient,
+	kafkaManager *kafka.Manager,
+) *OrchestrationService {
 	return &OrchestrationService{
 		userClient:     userClient,
 		templateClient: templateClient,
+		kafkaManager:   kafkaManager,
 	}
 }
 
 func (s *OrchestrationService) ProcessNotification(req *models.NotificationRequest) (*models.NotificationResponse, error) {
 	notificationID := uuid.New().String()
+	ctx := context.Background()
 
 	logger.Log.Info("Processing notification",
 		zap.String("notification_id", notificationID),
 		zap.String("user_id", req.UserID),
-		zap.String("template_id", req.TemplateID),
-		zap.String("channel", req.Channel),
+		zap.String("template_code", req.TemplateCode),
+		zap.String("notification_type", string(req.NotificationType)),
 	)
 
 	// Step 1: Get user preferences
@@ -43,132 +52,123 @@ func (s *OrchestrationService) ProcessNotification(req *models.NotificationReque
 		return nil, fmt.Errorf("failed to get user preferences: %w", err)
 	}
 
-	// Step 2: Check if notifications are enabled globally
-	if !userPrefs.NotificationEnabled {
-		logger.Log.Warn("Notifications disabled for user",
-			zap.String("user_id", req.UserID),
-		)
-		return &models.NotificationResponse{
-			NotificationID: notificationID,
-			Status:         "skipped",
-			Message:        "User has disabled notifications",
-			CreatedAt:      time.Now(),
-		}, nil
-	}
-
-	// Step 3: Check channel-specific preferences
-	if err := s.validateChannelPreferences(req.Channel, userPrefs); err != nil {
+	// Step 2: Validate channel preferences
+	if err := s.validateChannelPreferences(req.NotificationType, userPrefs); err != nil {
 		logger.Log.Warn("Channel validation failed",
 			zap.String("user_id", req.UserID),
-			zap.String("channel", req.Channel),
+			zap.String("notification_type", string(req.NotificationType)),
 			zap.Error(err),
 		)
 		return &models.NotificationResponse{
 			NotificationID: notificationID,
-			Status:         "skipped",
-			Message:        err.Error(),
-			CreatedAt:      time.Now(),
+			Status:         models.StatusFailed,
+			Timestamp:      time.Now(),
+			Error:          err.Error(),
 		}, nil
 	}
 
-	// Step 4: Check opt-out status
-	optOutStatus, err := s.userClient.GetOptOutStatus(req.UserID)
-	if err != nil {
-		logger.Log.Error("Failed to check opt-out status",
-			zap.String("user_id", req.UserID),
-			zap.Error(err),
-		)
-		return nil, fmt.Errorf("failed to check opt-out status: %w", err)
-	}
-
-	if optOutStatus.OptedOut || optOutStatus.Channels[req.Channel] {
-		logger.Log.Warn("User has opted out",
-			zap.String("user_id", req.UserID),
-			zap.String("channel", req.Channel),
-		)
-		return &models.NotificationResponse{
-			NotificationID: notificationID,
-			Status:         "skipped",
-			Message:        "User has opted out",
-			CreatedAt:      time.Now(),
-		}, nil
-	}
-
-	// Step 5: Get and render template
+	// Step 3: Render template
 	rendered, err := s.templateClient.RenderTemplate(
-		req.TemplateID,
-		userPrefs.Language,
+		req.TemplateCode,
+		"en", // Default language
 		req.Variables,
 	)
 	if err != nil {
 		logger.Log.Error("Failed to render template",
-			zap.String("template_id", req.TemplateID),
+			zap.String("template_code", req.TemplateCode),
 			zap.Error(err),
 		)
 		return nil, fmt.Errorf("failed to render template: %w", err)
 	}
 
-	// Step 6: Create notification object
-	notification := &models.Notification{
-		ID:         notificationID,
-		UserID:     req.UserID,
-		TemplateID: req.TemplateID,
-		Channel:    req.Channel,
-		To:         s.getRecipient(req.Channel, userPrefs),
-		Subject:    rendered.Rendered.HTML, // For email, extract subject
-		Body:       rendered.Rendered.Text,
-		Variables:  req.Variables,
-		Priority:   s.getPriority(req.Priority),
-		Status:     "pending",
-		CreatedAt:  time.Now(),
+	// Step 4: Create and publish Kafka payload
+	payload := s.createKafkaPayload(notificationID, req, rendered)
+	if err := s.publishToKafka(ctx, req.NotificationType, notificationID, payload); err != nil {
+		logger.Log.Error("Failed to publish to Kafka",
+			zap.String("notification_id", notificationID),
+			zap.Error(err),
+		)
+		return nil, fmt.Errorf("failed to queue notification: %w", err)
 	}
 
-	// Step 7: TODO - Publish to Kafka (will be implemented later)
-	logger.Log.Info("Notification ready for delivery",
+	logger.Log.Info("Notification queued successfully",
 		zap.String("notification_id", notificationID),
-		zap.String("channel", req.Channel),
-		zap.String("to", notification.To),
+		zap.String("notification_type", string(req.NotificationType)),
 	)
 
-	// For now, simulate successful queueing
 	return &models.NotificationResponse{
 		NotificationID: notificationID,
-		Status:         "queued",
-		Message:        "Notification queued for delivery",
-		CreatedAt:      time.Now(),
+		Status:         models.StatusPending,
+		Timestamp:      time.Now(),
 	}, nil
 }
 
-func (s *OrchestrationService) validateChannelPreferences(channel string, prefs *models.UserPreferences) error {
-	switch channel {
-	case "email":
-		if !prefs.Channels.Email.Enabled {
-			return fmt.Errorf("email notifications disabled")
-		}
-		if !prefs.Channels.Email.Verified {
-			return fmt.Errorf("email address not verified")
-		}
-	case "push":
-		if !prefs.Channels.Push.Enabled {
-			return fmt.Errorf("push notifications disabled")
-		}
-		if len(prefs.Channels.Push.Devices) == 0 {
-			return fmt.Errorf("no active devices registered")
+// createKafkaPayload constructs the payload for Kafka based on notification type
+func (s *OrchestrationService) createKafkaPayload(
+	notificationID string,
+	req *models.NotificationRequest,
+	rendered *models.RenderResponse,
+) *models.KafkaNotificationPayload {
+	payload := &models.KafkaNotificationPayload{
+		NotificationID:   notificationID,
+		NotificationType: string(req.NotificationType),
+		UserID:           req.UserID,
+		TemplateCode:     req.TemplateCode,
+		Priority:         s.getPriority(req.Priority),
+		Metadata:         req.Metadata,
+		CreatedAt:        time.Now(),
+	}
+
+	// Set rendered content based on notification type
+	switch req.NotificationType {
+	case models.NotificationEmail:
+		payload.Subject = rendered.Rendered.Subject
+		payload.Body = rendered.Rendered.Body.HTML
+		payload.TextBody = rendered.Rendered.Body.Text
+	case models.NotificationPush:
+		// For push notifications, use the text body as the message
+		payload.Body = rendered.Rendered.Body.Text
+		// Subject can be used as the push notification title
+		if rendered.Rendered.Subject != "" {
+			payload.Subject = rendered.Rendered.Subject
 		}
 	}
-	return nil
+
+	return payload
 }
 
-func (s *OrchestrationService) getRecipient(channel string, prefs *models.UserPreferences) string {
-	switch channel {
-	case "email":
-		return prefs.Email
-	case "push":
-		if len(prefs.Channels.Push.Devices) > 0 {
-			return prefs.Channels.Push.Devices[0].Token
+// publishToKafka sends the notification to the appropriate Kafka topic
+func (s *OrchestrationService) publishToKafka(
+	ctx context.Context,
+	notificationType models.NotificationType,
+	key string,
+	payload *models.KafkaNotificationPayload,
+) error {
+	return s.kafkaManager.PublishByType(
+		ctx,
+		string(notificationType),
+		key,
+		payload,
+	)
+}
+
+func (s *OrchestrationService) validateChannelPreferences(
+	notificationType models.NotificationType,
+	prefs *models.UserPreferences,
+) error {
+	switch notificationType {
+	case models.NotificationEmail:
+		if !prefs.Email {
+			return fmt.Errorf("email notifications disabled")
 		}
+	case models.NotificationPush:
+		if !prefs.Push {
+			return fmt.Errorf("push notifications disabled")
+		}
+	default:
+		return fmt.Errorf("unknown notification type: %s", notificationType)
 	}
-	return ""
+	return nil
 }
 
 func (s *OrchestrationService) getPriority(priority string) string {
