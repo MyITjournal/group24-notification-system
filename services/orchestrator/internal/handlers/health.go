@@ -5,16 +5,20 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/database"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/models"
 	"github.com/gin-gonic/gin"
 )
 
-type HealthHandler struct {
-	db *database.DB
+// DatabasePinger defines the interface for database ping operations
+type DatabasePinger interface {
+	Ping(ctx context.Context) error
 }
 
-func NewHealthHandler(db *database.DB) *HealthHandler {
+type HealthHandler struct {
+	db DatabasePinger
+}
+
+func NewHealthHandler(db DatabasePinger) *HealthHandler {
 	return &HealthHandler{db: db}
 }
 

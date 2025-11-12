@@ -7,20 +7,31 @@ import (
 	"time"
 
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/models"
-	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/services"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
+// OrchestrationServiceInterface defines the interface for orchestration operations
+type OrchestrationServiceInterface interface {
+	ProcessNotification(req *models.NotificationRequest) (*models.NotificationResponse, error)
+	UpdateNotificationStatus(ctx context.Context, notificationID string, status models.NotificationStatus, errorMsg string) error
+}
+
+// IdempotencyServiceInterface defines the interface for idempotency operations
+type IdempotencyServiceInterface interface {
+	GetCachedResponse(ctx context.Context, key string) (*models.NotificationResponse, error)
+	StoreResponse(ctx context.Context, key string, response *models.NotificationResponse) error
+}
+
 type NotificationHandler struct {
-	orchestrationService *services.OrchestrationService
-	idempotencyService   *services.IdempotencyService
+	orchestrationService OrchestrationServiceInterface
+	idempotencyService   IdempotencyServiceInterface
 }
 
 func NewNotificationHandler(
-	orchestrationService *services.OrchestrationService,
-	idempotencyService *services.IdempotencyService,
+	orchestrationService OrchestrationServiceInterface,
+	idempotencyService IdempotencyServiceInterface,
 ) *NotificationHandler {
 	return &NotificationHandler{
 		orchestrationService: orchestrationService,
@@ -101,12 +112,7 @@ func (h *NotificationHandler) Create(c *gin.Context) {
 	duration := time.Since(startTime)
 	c.Header("X-Response-Time", duration.String())
 
-	statusCode := http.StatusCreated
-	if response.Status == "skipped" {
-		statusCode = http.StatusOK
-	}
-
-	c.JSON(statusCode, models.Response{
+	c.JSON(http.StatusCreated, models.Response{
 		Success: true,
 		Message: "Notification queued successfully",
 		Data:    response,

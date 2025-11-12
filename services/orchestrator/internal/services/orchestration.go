@@ -8,23 +8,27 @@ import (
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/clients"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/models"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/repository"
-	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/pkg/kafka"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/pkg/logger"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
+// KafkaManagerInterface defines the interface for Kafka operations
+type KafkaManagerInterface interface {
+	PublishByType(ctx context.Context, notificationType, notificationID string, payload interface{}) error
+}
+
 type OrchestrationService struct {
 	userClient       clients.UserClient
 	templateClient   clients.TemplateClient
-	kafkaManager     *kafka.Manager
+	kafkaManager     KafkaManagerInterface
 	notificationRepo repository.NotificationRepository
 }
 
 func NewOrchestrationService(
 	userClient clients.UserClient,
 	templateClient clients.TemplateClient,
-	kafkaManager *kafka.Manager,
+	kafkaManager KafkaManagerInterface,
 	notificationRepo repository.NotificationRepository,
 ) *OrchestrationService {
 	return &OrchestrationService{
