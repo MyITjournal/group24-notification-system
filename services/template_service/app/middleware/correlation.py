@@ -1,0 +1,48 @@
+import uuid
+
+class CorrelationIdMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        # Generate or forward correlation ID
+        request.correlation_id = request.headers.get(
+            "X-Correlation-ID",
+            str(uuid.uuid4())
+        )
+
+        response = self.get_response(request)
+        response["X-Correlation-ID"] = request.correlation_id
+        return response
+import uuid
+
+class CorrelationIdMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        # Generate or forward correlation ID
+        request.correlation_id = request.headers.get(
+            "X-Correlation-ID",
+            str(uuid.uuid4())
+        )
+
+        response = self.get_response(request)
+        response["X-Correlation-ID"] = request.correlation_id
+        return response
+import uuid
+
+class CorrelationIdMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        # Generate or forward correlation ID
+        request.correlation_id = request.headers.get(
+            "X-Correlation-ID",
+            str(uuid.uuid4())
+        )
+
+        response = self.get_response(request)
+        response["X-Correlation-ID"] = request.correlation_id
+        return response

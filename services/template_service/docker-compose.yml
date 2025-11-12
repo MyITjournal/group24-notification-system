@@ -1,0 +1,122 @@
+version: "3.9"
+
+services:
+  ############################################
+  # PostgreSQL (Database for Django)
+  ############################################
+  db:
+    image: postgres:15
+    container_name: template_db
+    environment:
+      POSTGRES_DB: templates_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ############################################
+  # Zookeeper (Required by Kafka)
+  ############################################
+  zookeeper:
+    image: bitnami/zookeeper:latest
+    container_name: zookeeper
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: "yes"
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper_data:/bitnami/zookeeper
+
+  ############################################
+  # Kafka Broker
+  ############################################
+  kafka:
+    image: bitnami/kafka:latest
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ENABLE_KRAFT: "no"
+      KAFKA_BROKER_ID: 1
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+
+      # Listener configuration (important)
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      
+      # Allow auto topic creation
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    volumes:
+      - kafka_data:/bitnami/kafka
+
+  ############################################
+  # Kafka UI (optional but very helpful)
+  ############################################
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka_ui
+    ports:
+      - "8080:8080"
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+
+  ############################################
+  # Django Template Service
+  ############################################
+  django:
+    build: .
+    container_name: template_service
+    command: >
+      sh -c "python manage.py migrate &&
+             gunicorn app.wsgi:application --bind 0.0.0.0:8000"
+    ports:
+      - "8001:8000"
+    depends_on:
+      - db
+      - kafka
+    environment:
+      DJANGO_SETTINGS_MODULE: app.settings
+      DATABASE_HOST: db
+      DATABASE_NAME: templates_db
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    volumes:
+      - .:/app
+
+  ############################################
+  # Kafka Worker (consumer)
+  ############################################
+  kafka-worker:
+    build: .
+    container_name: kafka_worker
+    command: python kafka_worker.py
+    depends_on:
+      - django
+      - kafka
+    environment:
+      DJANGO_SETTINGS_MODULE: app.settings
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    volumes:
+      - .:/app
+
+volumes:
+  pgdata:
+  kafka_data:
+  zookeeper_data:
