@@ -59,41 +59,86 @@ docker run -d \
 
 ## Testing
 
-### Health Check
+### Running Tests
+
+The API Gateway includes a comprehensive test suite located in `tests/`:
+
+#### Quick Test (Config Only)
+```bash
+cd api-gateway
+make test-config
+```
+
+#### All Tests (Requires Running Services)
+```bash
+# Start services first
+docker-compose -f docker-compose.gateway.yml up -d
+
+# Wait for services to be ready (30-60 seconds)
+sleep 30
+
+# Run all tests
+cd api-gateway
+make test-all
+
+# Or run tests individually:
+make test-config      # Nginx config validation
+make test-routing     # Routing and header tests
+make test-rate-limit  # Rate limiting tests
+make test-e2e         # End-to-end integration tests
+```
+
+#### Using Test Scripts Directly
+```bash
+cd api-gateway
+./tests/nginx_config_test.sh
+./tests/routing_test.sh
+./tests/rate_limiting_test.sh
+./tests/e2e/gateway_integration_test.sh
+
+# Or run all at once:
+./tests/run-all-tests.sh
+```
+
+### Manual Testing
+
+#### Health Check
 
 ```bash
 curl http://localhost:8080/health
 ```
 
-### Create Notification (through gateway)
+#### Create Notification (through gateway)
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/notifications \
   -H "Content-Type: application/json" \
   -H "X-Request-ID: test-123" \
+  -H "X-API-Key: your-api-key" \
   -d '{
-    "id": "test-123",
+    "request_id": "test-123",
     "user_id": "usr_123",
     "template_code": "welcome_email",
     "notification_type": "email",
     "variables": {
-      "user_name": "Test User",
-      "app_name": "MyApp"
+      "name": "Test User"
     }
   }'
 ```
 
-### Test Rate Limiting
+#### Test Rate Limiting
 
 ```bash
 # Send multiple rapid requests
 for i in {1..150}; do
   curl -X POST http://localhost:8080/api/v1/notifications \
     -H "Content-Type: application/json" \
-    -d '{"id":"test-'$i'","user_id":"usr_123","template_code":"test","notification_type":"email"}'
+    -d '{"request_id":"test-'$i'","user_id":"usr_123","template_code":"test","notification_type":"email"}'
 done
 # Should see 429 responses after rate limit
 ```
+
+See `tests/README.md` for detailed test documentation.
 
 ## Configuration Files
 
