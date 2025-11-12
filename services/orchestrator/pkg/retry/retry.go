@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/pkg/logger"
@@ -36,6 +37,11 @@ func Retry(ctx context.Context, cfg Config, operation func() error) error {
 	var lastErr error
 
 	for attempt := 0; attempt <= cfg.MaxRetries; attempt++ {
+		// Check context before each attempt
+		if ctx.Err() != nil {
+			return fmt.Errorf("context cancelled: %w", ctx.Err())
+		}
+
 		if attempt > 0 {
 			// Calculate delay with exponential backoff
 			delay := calculateDelay(cfg, attempt)
@@ -164,11 +170,16 @@ func IsRetryableHTTPStatus(statusCode int) bool {
 
 // contains checks if a string contains a substring (case-insensitive)
 func contains(s, substr string) bool {
+	if len(substr) == 0 {
+		return false // Empty substring doesn't match
+	}
 	if len(s) < len(substr) {
 		return false
 	}
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
+	sLower := strings.ToLower(s)
+	substrLower := strings.ToLower(substr)
+	for i := 0; i <= len(sLower)-len(substrLower); i++ {
+		if sLower[i:i+len(substrLower)] == substrLower {
 			return true
 		}
 	}

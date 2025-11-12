@@ -112,6 +112,7 @@ func (cb *CircuitBreaker) onSuccess() {
 			cb.state = StateClosed
 			cb.failures = 0
 			cb.successes = 0
+			cb.halfOpenCount = 0 // Reset half-open count when closing
 		}
 	case StateClosed:
 		cb.failures = 0
