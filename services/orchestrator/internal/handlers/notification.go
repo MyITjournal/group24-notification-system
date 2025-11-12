@@ -38,23 +38,21 @@ func (h *NotificationHandler) Create(c *gin.Context) {
 			zap.String("request_id", requestID.(string)),
 			zap.Error(err),
 		)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": gin.H{
-				"success": false,
-				"message": "Invalid request payload",
-				"error":   gin.H{"validation_error": err.Error()},
-			},
+		c.JSON(http.StatusBadRequest, models.Response{
+			Success: false,
+			Message: "Invalid request payload",
+			Error:   err.Error(),
 		})
 		return
 	}
 
-	// Check for idempotency - use the ID field as the idempotency key
+	// Check for idempotency - use the RequestID field as the idempotency key
 	ctx := context.Background()
-	cachedResponse, err := h.idempotencyService.GetCachedResponse(ctx, req.ID)
+	cachedResponse, err := h.idempotencyService.GetCachedResponse(ctx, req.RequestID)
 	if err != nil {
 		logger.Log.Warn("Failed to check idempotency, proceeding with request",
 			zap.String("request_id", requestID.(string)),
-			zap.String("idempotency_key", req.ID),
+			zap.String("idempotency_key", req.RequestID),
 			zap.Error(err),
 		)
 		// Continue processing even if idempotency check fails
@@ -62,13 +60,17 @@ func (h *NotificationHandler) Create(c *gin.Context) {
 		// Return cached response
 		logger.Log.Info("Returning cached response for idempotency key",
 			zap.String("request_id", requestID.(string)),
-			zap.String("idempotency_key", req.ID),
+			zap.String("idempotency_key", req.RequestID),
 			zap.String("notification_id", cachedResponse.NotificationID),
 		)
 		duration := time.Since(startTime)
 		c.Header("X-Response-Time", duration.String())
 		c.Header("X-Idempotent-Replay", "true")
-		c.JSON(http.StatusOK, cachedResponse)
+		c.JSON(http.StatusOK, models.Response{
+			Success: true,
+			Message: "Notification retrieved from cache",
+			Data:    cachedResponse,
+		})
 		return
 	}
 
@@ -79,21 +81,19 @@ func (h *NotificationHandler) Create(c *gin.Context) {
 			zap.String("request_id", requestID.(string)),
 			zap.Error(err),
 		)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": gin.H{
-				"success": false,
-				"message": "Failed to process notification",
-				"error":   gin.H{"internal server error": err.Error()},
-			},
+		c.JSON(http.StatusInternalServerError, models.Response{
+			Success: false,
+			Message: "Failed to process notification",
+			Error:   err.Error(),
 		})
 		return
 	}
 
 	// Store response in Redis for idempotency (even if it fails, we don't want to block the response)
-	if storeErr := h.idempotencyService.StoreResponse(ctx, req.ID, response); storeErr != nil {
+	if storeErr := h.idempotencyService.StoreResponse(ctx, req.RequestID, response); storeErr != nil {
 		logger.Log.Warn("Failed to store idempotency key, response still returned",
 			zap.String("request_id", requestID.(string)),
-			zap.String("idempotency_key", req.ID),
+			zap.String("idempotency_key", req.RequestID),
 			zap.Error(storeErr),
 		)
 	}
@@ -106,12 +106,15 @@ func (h *NotificationHandler) Create(c *gin.Context) {
 		statusCode = http.StatusOK
 	}
 
-	c.JSON(statusCode, response)
+	c.JSON(statusCode, models.Response{
+		Success: true,
+		Message: "Notification queued successfully",
+		Data:    response,
+	})
 }
 
-// UpdateStatus handles POST /api/v1/notifications/:id/status for updating notification status.
+// UpdateStatus handles POST /api/v1/{notification_type}/status for updating notification status.
 func (h *NotificationHandler) UpdateStatus(c *gin.Context) {
-	notificationID := c.Param("id")
 	requestID, _ := c.Get("request_id")
 
 	// Define a struct to bind the status update payload
@@ -127,27 +130,15 @@ func (h *NotificationHandler) UpdateStatus(c *gin.Context) {
 			zap.String("request_id", requestID.(string)),
 			zap.Error(err),
 		)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": gin.H{
-				"success": false,
-				"message": "Invalid request payload for user creation",
-				"error":   gin.H{"validation_error": err.Error()},
-			},
+		c.JSON(http.StatusBadRequest, models.Response{
+			Success: false,
+			Message: "Invalid request payload",
+			Error:   err.Error(),
 		})
 		return
 	}
 
-	// Basic path validation
-	if req.NotificationID != notificationID {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": gin.H{
-				"success": false,
-				"message": "Notification ID in path does not match payload ID",
-				"error":   gin.H{"validation error": req.Error},
-			},
-		})
-		return
-	}
+	notificationID := req.NotificationID
 
 	logger.Log.Info("Updating notification status",
 		zap.String("notification_id", notificationID),
@@ -158,12 +149,10 @@ func (h *NotificationHandler) UpdateStatus(c *gin.Context) {
 	// Convert string status to NotificationStatus type
 	notificationStatus := models.NotificationStatus(req.Status)
 	if notificationStatus != models.StatusPending && notificationStatus != models.StatusDelivered && notificationStatus != models.StatusFailed {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": gin.H{
-				"success": false,
-				"message": "Invalid status value",
-				"error":   gin.H{"validation_error": "status must be one of: pending, delivered, failed"},
-			},
+		c.JSON(http.StatusBadRequest, models.Response{
+			Success: false,
+			Message: "Invalid status value",
+			Error:   "status must be one of: pending, delivered, failed",
 		})
 		return
 	}
@@ -176,12 +165,10 @@ func (h *NotificationHandler) UpdateStatus(c *gin.Context) {
 			zap.String("request_id", requestID.(string)),
 			zap.Error(err),
 		)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": gin.H{
-				"success": false,
-				"message": "Failed to update notification status",
-				"error":   gin.H{"internal_server_error": err.Error()},
-			},
+		c.JSON(http.StatusInternalServerError, models.Response{
+			Success: false,
+			Message: "Failed to update notification status",
+			Error:   err.Error(),
 		})
 		return
 	}
@@ -192,10 +179,10 @@ func (h *NotificationHandler) UpdateStatus(c *gin.Context) {
 		zap.String("request_id", requestID.(string)),
 	)
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": fmt.Sprintf("Status updated for notification %s: %s", notificationID, req.Status),
-		"data": gin.H{
+	c.JSON(http.StatusOK, models.Response{
+		Success: true,
+		Message: fmt.Sprintf("Status updated for notification %s: %s", notificationID, req.Status),
+		Data: gin.H{
 			"notification_id": notificationID,
 			"status":          req.Status,
 			"updated_at":      time.Now(),

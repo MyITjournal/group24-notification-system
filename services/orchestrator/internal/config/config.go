@@ -20,6 +20,7 @@ type ServerConfig struct {
 	Port         string
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
+	APIKey       string
 }
 
 type ServicesConfig struct {
@@ -72,6 +73,7 @@ func Load() *Config {
 			Port:         getEnv("PORT", "8080"),
 			ReadTimeout:  getDurationEnv("READ_TIMEOUT", 10*time.Second),
 			WriteTimeout: getDurationEnv("WRITE_TIMEOUT", 10*time.Second),
+			APIKey:       getEnv("API_KEY", ""),
 		},
 		Services: ServicesConfig{
 			UserService: ServiceEndpoint{

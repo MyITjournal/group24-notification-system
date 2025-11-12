@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/database"
+	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/models"
 	"github.com/gin-gonic/gin"
 )
 
@@ -18,9 +19,13 @@ func NewHealthHandler(db *database.DB) *HealthHandler {
 }
 
 func (h *HealthHandler) Live(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"status":    "ok",
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	c.JSON(http.StatusOK, models.Response{
+		Success: true,
+		Message: "Service is healthy",
+		Data: gin.H{
+			"status":    "ok",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		},
 	})
 }
 
@@ -37,20 +42,28 @@ func (h *HealthHandler) Ready(c *gin.Context) {
 
 	if err := h.db.Ping(ctx); err != nil {
 		checks["database"] = "error"
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"status":    "not_ready",
-			"checks":    checks,
-			"timestamp": time.Now().UTC().Format(time.RFC3339),
-			"error":     "database connection failed",
+		c.JSON(http.StatusServiceUnavailable, models.Response{
+			Success: false,
+			Message: "Service is not ready",
+			Error:   "database connection failed",
+			Data: gin.H{
+				"status":    "not_ready",
+				"checks":    checks,
+				"timestamp": time.Now().UTC().Format(time.RFC3339),
+			},
 		})
 		return
 	}
 
 	checks["database"] = "ok"
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":    "ready",
-		"checks":    checks,
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	c.JSON(http.StatusOK, models.Response{
+		Success: true,
+		Message: "Service is ready",
+		Data: gin.H{
+			"status":    "ready",
+			"checks":    checks,
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		},
 	})
 }

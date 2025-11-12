@@ -122,10 +122,20 @@ func main() {
 
 	// API v1 routes
 	v1 := router.Group("/api/v1")
+	v1.Use(middleware.APIKeyAuth())
 	{
 		// Notification endpoints
 		v1.POST("/notifications", notificationHandler.Create)
-		v1.POST("/notifications/:id/status", notificationHandler.UpdateStatus)
+
+		// Status update endpoints (by notification type)
+		emailGroup := v1.Group("/email")
+		{
+			emailGroup.POST("/status", notificationHandler.UpdateStatus)
+		}
+		pushGroup := v1.Group("/push")
+		{
+			pushGroup.POST("/status", notificationHandler.UpdateStatus)
+		}
 
 		// User management
 		v1.POST("/users", userHandler.Create)
