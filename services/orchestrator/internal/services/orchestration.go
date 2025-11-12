@@ -238,11 +238,26 @@ func (s *OrchestrationService) validateChannelPreferences(
 	return nil
 }
 
-func (s *OrchestrationService) getPriority(priority string) string {
-	if priority == "" {
+func (s *OrchestrationService) getPriority(priority int) string {
+	// Map integer priority to string values
+	// 0 or unset = normal, 1 = low, 2 = normal, 3 = high, 4 = urgent
+	if priority == 0 {
 		return "normal"
 	}
-	return priority
+
+	priorityMap := map[int]string{
+		1: "low",
+		2: "normal",
+		3: "high",
+		4: "urgent",
+	}
+
+	if val, ok := priorityMap[priority]; ok {
+		return val
+	}
+
+	// Default to normal for unknown values
+	return "normal"
 }
 
 // UpdateNotificationStatus updates the status of a notification in the database
