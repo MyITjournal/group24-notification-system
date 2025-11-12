@@ -1,0 +1,238 @@
+version: '3.8'
+
+services:
+  # API Gateway (Nginx)
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    ports:
+      - "8080:80"
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+    networks:
+      - notification-network
+    volumes:
+      # Mount logs for debugging (optional)
+      - api-gateway-logs:/var/log/nginx
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  # Database Migrations
+  orchestrator-migrations:
+    image: postgres:15-alpine
+    container_name: orchestrator-migrations
+    environment:
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGUSER=orchestrator
+      - PGPASSWORD=orchestrator_pass
+      - PGDATABASE=orchestrator_db
+    volumes:
+      - ./services/orchestrator/migrations:/migrations:ro
+    networks:
+      - notification-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      echo 'Waiting for database to be ready...'
+      until pg_isready -h postgres -U orchestrator; do
+        echo 'Waiting for database...'
+        sleep 2
+      done
+      
+      echo 'Running migrations...'
+      for migration in /migrations/*.up.sql; do
+        if [ -f \"$$migration\" ]; then
+          echo \"Running migration: $$(basename $$migration)\"
+          psql -h postgres -U orchestrator -d orchestrator_db -f \"$$migration\" || echo \"Migration may have already been applied\"
+        fi
+      done
+      
+      echo 'Migrations complete!'
+      "
+    restart: "no"
+
+  # Orchestrator Service
+  orchestrator:
+    build:
+      context: ./services/orchestrator
+      dockerfile: Dockerfile
+    container_name: orchestrator
+    ports:
+      - "8081:8080"  # Expose directly for testing, gateway uses internal port
+    environment:
+      - PORT=8080
+      - USE_MOCK_SERVICES=true
+      - LOG_FORMAT=json
+      - LOG_LEVEL=info
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=orchestrator
+      - POSTGRES_PASSWORD=orchestrator_pass
+      - POSTGRES_DB=orchestrator_db
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - KAFKA_BROKERS=kafka:9093
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      orchestrator-migrations:
+        condition: service_completed_successfully
+    networks:
+      - notification-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    environment:
+      - POSTGRES_USER=orchestrator
+      - POSTGRES_PASSWORD=orchestrator_pass
+      - POSTGRES_DB=orchestrator_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - notification-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orchestrator"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - notification-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # Zookeeper (for Kafka)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - notification-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Kafka
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
+    networks:
+      - notification-network
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Kafka Topic Initialization
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      echo 'Waiting for Kafka to be ready...'
+      cub kafka-ready -b kafka:9093 1 30
+
+      echo 'Creating topics...'
+      
+      kafka-topics --create --if-not-exists \
+        --bootstrap-server kafka:9093 \
+        --topic email.queue \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config retention.ms=604800000 \
+        --config segment.ms=86400000
+
+      kafka-topics --create --if-not-exists \
+        --bootstrap-server kafka:9093 \
+        --topic push.queue \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config retention.ms=604800000 \
+        --config segment.ms=86400000
+
+      kafka-topics --create --if-not-exists \
+        --bootstrap-server kafka:9093 \
+        --topic failed.queue \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config retention.ms=2592000000 \
+        --config segment.ms=86400000
+
+      echo 'Topics created:'
+      kafka-topics --list --bootstrap-server kafka:9093
+      echo 'Kafka setup complete!'
+      "
+    networks:
+      - notification-network
+
+networks:
+  notification-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  api-gateway-logs:
+

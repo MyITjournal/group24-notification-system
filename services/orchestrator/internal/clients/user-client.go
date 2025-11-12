@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/models"
 	circuitbreaker "github.com/BerylCAtieno/group24-notification-system/services/orchestrator/pkg/circuit-breaker"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/pkg/logger"
+	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/pkg/retry"
 	"go.uber.org/zap"
 )
 
@@ -17,6 +19,7 @@ type userClient struct {
 	baseURL        string
 	httpClient     *http.Client
 	circuitBreaker *circuitbreaker.CircuitBreaker
+	retryConfig    retry.Config
 }
 
 type UserClientConfig struct {
@@ -25,11 +28,25 @@ type UserClientConfig struct {
 	MaxFailures           uint32
 	CircuitBreakerTimeout time.Duration
 	HalfOpenMax           uint32
+	RetryMaxAttempts      int
+	RetryInitialDelay     time.Duration
+	RetryMaxDelay         time.Duration
 }
 
 func NewUserClient(cfg UserClientConfig) UserClient {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 10 * time.Second
+	}
+
+	retryCfg := retry.DefaultConfig()
+	if cfg.RetryMaxAttempts > 0 {
+		retryCfg.MaxRetries = cfg.RetryMaxAttempts
+	}
+	if cfg.RetryInitialDelay > 0 {
+		retryCfg.InitialDelay = cfg.RetryInitialDelay
+	}
+	if cfg.RetryMaxDelay > 0 {
+		retryCfg.MaxDelay = cfg.RetryMaxDelay
 	}
 
 	return &userClient{
@@ -43,59 +60,70 @@ func NewUserClient(cfg UserClientConfig) UserClient {
 			Timeout:     cfg.CircuitBreakerTimeout,
 			HalfOpenMax: cfg.HalfOpenMax,
 		}),
+		retryConfig: retryCfg,
 	}
 }
 
 func (c *userClient) GetPreferences(userID string) (*models.UserPreferences, error) {
 	var prefs *models.UserPreferences
-	var execErr error
 
-	err := c.circuitBreaker.Execute(func() error {
-		url := fmt.Sprintf("%s/api/v1/users/%s/preferences", c.baseURL, userID)
+	ctx := context.Background()
 
-		req, err := http.NewRequest(http.MethodGet, url, nil)
-		if err != nil {
-			return fmt.Errorf("failed to create request: %w", err)
-		}
+	// Wrap circuit breaker execution with retry logic
+	err := retry.Retry(ctx, c.retryConfig, func() error {
+		return c.circuitBreaker.Execute(func() error {
+			url := fmt.Sprintf("%s/api/v1/users/%s/preferences", c.baseURL, userID)
 
-		req.Header.Set("Content-Type", "application/json")
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+			if err != nil {
+				return fmt.Errorf("failed to create request: %w", err)
+			}
 
-		logger.Log.Debug("Calling user service",
-			zap.String("url", url),
-			zap.String("user_id", userID),
-		)
+			req.Header.Set("Content-Type", "application/json")
 
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			logger.Log.Error("User service request failed",
+			logger.Log.Debug("Calling user service",
+				zap.String("url", url),
 				zap.String("user_id", userID),
-				zap.Error(err),
 			)
-			return fmt.Errorf("user service request failed: %w", err)
-		}
-		defer resp.Body.Close()
 
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("failed to read response body: %w", err)
-		}
+			resp, err := c.httpClient.Do(req)
+			if err != nil {
+				logger.Log.Error("User service request failed",
+					zap.String("user_id", userID),
+					zap.Error(err),
+				)
+				return fmt.Errorf("user service request failed: %w", err)
+			}
+			defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusOK {
-			logger.Log.Error("User service returned non-200 status",
-				zap.Int("status_code", resp.StatusCode),
-				zap.String("user_id", userID),
-				zap.String("response_body", string(body)),
-			)
-			return fmt.Errorf("user service returned status %d: %s", resp.StatusCode, string(body))
-		}
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return fmt.Errorf("failed to read response body: %w", err)
+			}
 
-		var result models.UserPreferences
-		if err := json.Unmarshal(body, &result); err != nil {
-			return fmt.Errorf("failed to unmarshal response: %w", err)
-		}
+			if resp.StatusCode != http.StatusOK {
+				logger.Log.Error("User service returned non-200 status",
+					zap.Int("status_code", resp.StatusCode),
+					zap.String("user_id", userID),
+					zap.String("response_body", string(body)),
+				)
+				
+				// Check if status is retryable
+				if retry.IsRetryableHTTPStatus(resp.StatusCode) {
+					return fmt.Errorf("user service returned retryable status %d: %s", resp.StatusCode, string(body))
+				}
+				// Non-retryable error (4xx except 429)
+				return fmt.Errorf("user service returned non-retryable status %d: %s", resp.StatusCode, string(body))
+			}
 
-		prefs = &result
-		return nil
+			var result models.UserPreferences
+			if err := json.Unmarshal(body, &result); err != nil {
+				return fmt.Errorf("failed to unmarshal response: %w", err)
+			}
+
+			prefs = &result
+			return nil
+		})
 	})
 
 	if err != nil {
@@ -112,7 +140,7 @@ func (c *userClient) GetPreferences(userID string) (*models.UserPreferences, err
 			)
 			return nil, fmt.Errorf("user service is recovering, please retry: %w", err)
 		}
-		return nil, execErr
+		return nil, err
 	}
 
 	return prefs, nil

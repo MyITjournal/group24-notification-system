@@ -8,17 +8,19 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig
-	Logging  LoggingConfig
-	Services ServicesConfig
-	Kafka    KafkaConfig
-	Redis    RedisConfig
+	Server     ServerConfig
+	Logging    LoggingConfig
+	Services   ServicesConfig
+	Kafka      KafkaConfig
+	Redis      RedisConfig
+	PostgreSQL PostgreSQLConfig
 }
 
 type ServerConfig struct {
 	Port         string
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
+	APIKey       string
 }
 
 type ServicesConfig struct {
@@ -28,8 +30,11 @@ type ServicesConfig struct {
 }
 
 type ServiceEndpoint struct {
-	BaseURL string
-	Timeout time.Duration
+	BaseURL           string
+	Timeout           time.Duration
+	RetryMaxAttempts  int
+	RetryInitialDelay time.Duration
+	RetryMaxDelay     time.Duration
 }
 
 type LoggingConfig struct {
@@ -38,16 +43,28 @@ type LoggingConfig struct {
 }
 
 type KafkaConfig struct {
-	Brokers    []string
-	EmailTopic string
-	PushTopic  string
+	Brokers     []string
+	EmailTopic  string
+	PushTopic   string
+	FailedTopic string // Dead Letter Queue topic
 }
 
 type RedisConfig struct {
+	Host           string
+	Port           string
+	Password       string
+	DB             int
+	IdempotencyTTL time.Duration // TTL for idempotency keys
+}
+
+type PostgreSQLConfig struct {
 	Host     string
 	Port     string
+	User     string
 	Password string
-	DB       int
+	DBName   string
+	SSLMode  string
+	MaxConns int
 }
 
 func Load() *Config {
@@ -56,15 +73,22 @@ func Load() *Config {
 			Port:         getEnv("PORT", "8080"),
 			ReadTimeout:  getDurationEnv("READ_TIMEOUT", 10*time.Second),
 			WriteTimeout: getDurationEnv("WRITE_TIMEOUT", 10*time.Second),
+			APIKey:       getEnv("API_KEY", ""),
 		},
 		Services: ServicesConfig{
 			UserService: ServiceEndpoint{
-				BaseURL: getEnv("USER_SERVICE_URL", "http://user-service:8081"),
-				Timeout: getDurationEnv("USER_SERVICE_TIMEOUT", 3*time.Second),
+				BaseURL:           getEnv("USER_SERVICE_URL", "http://user-service:8081"),
+				Timeout:           getDurationEnv("USER_SERVICE_TIMEOUT", 3*time.Second),
+				RetryMaxAttempts:  getIntEnv("USER_SERVICE_RETRY_MAX_ATTEMPTS", 3),
+				RetryInitialDelay: getDurationEnv("USER_SERVICE_RETRY_INITIAL_DELAY", 100*time.Millisecond),
+				RetryMaxDelay:     getDurationEnv("USER_SERVICE_RETRY_MAX_DELAY", 5*time.Second),
 			},
 			TemplateService: ServiceEndpoint{
-				BaseURL: getEnv("TEMPLATE_SERVICE_URL", "http://template-service:8082"),
-				Timeout: getDurationEnv("TEMPLATE_SERVICE_TIMEOUT", 3*time.Second),
+				BaseURL:           getEnv("TEMPLATE_SERVICE_URL", "http://template-service:8082"),
+				Timeout:           getDurationEnv("TEMPLATE_SERVICE_TIMEOUT", 3*time.Second),
+				RetryMaxAttempts:  getIntEnv("TEMPLATE_SERVICE_RETRY_MAX_ATTEMPTS", 3),
+				RetryInitialDelay: getDurationEnv("TEMPLATE_SERVICE_RETRY_INITIAL_DELAY", 100*time.Millisecond),
+				RetryMaxDelay:     getDurationEnv("TEMPLATE_SERVICE_RETRY_MAX_DELAY", 5*time.Second),
 			},
 			UseMockServices: getBoolEnv("USE_MOCK_SERVICES", true),
 		},
@@ -74,15 +98,26 @@ func Load() *Config {
 		},
 
 		Kafka: KafkaConfig{
-			Brokers:    getSliceEnv("KAFKA_BROKERS", []string{"localhost:9092"}),
-			EmailTopic: getEnv("KAFKA_EMAIL_TOPIC", "email.queue"),
-			PushTopic:  getEnv("KAFKA_PUSH_TOPIC", "push.queue"),
+			Brokers:     getSliceEnv("KAFKA_BROKERS", []string{"localhost:9092"}),
+			EmailTopic:  getEnv("KAFKA_EMAIL_TOPIC", "email.queue"),
+			PushTopic:   getEnv("KAFKA_PUSH_TOPIC", "push.queue"),
+			FailedTopic: getEnv("KAFKA_FAILED_TOPIC", "failed.queue"),
 		},
 		Redis: RedisConfig{
-			Host:     getEnv("REDIS_HOST", "localhost"),
-			Port:     getEnv("REDIS_PORT", "6379"),
-			Password: getEnv("REDIS_PASSWORD", ""),
-			DB:       getIntEnv("REDIS_DB", 0),
+			Host:           getEnv("REDIS_HOST", "localhost"),
+			Port:           getEnv("REDIS_PORT", "6379"),
+			Password:       getEnv("REDIS_PASSWORD", ""),
+			DB:             getIntEnv("REDIS_DB", 0),
+			IdempotencyTTL: getDurationEnv("REDIS_IDEMPOTENCY_TTL", 24*time.Hour),
+		},
+		PostgreSQL: PostgreSQLConfig{
+			Host:     getEnv("POSTGRES_HOST", "localhost"),
+			Port:     getEnv("POSTGRES_PORT", "5432"),
+			User:     getEnv("POSTGRES_USER", "postgres"),
+			Password: getEnv("POSTGRES_PASSWORD", "postgres"),
+			DBName:   getEnv("POSTGRES_DB", "orchestrator"),
+			SSLMode:  getEnv("POSTGRES_SSLMODE", "disable"),
+			MaxConns: getIntEnv("POSTGRES_MAX_CONNS", 25),
 		},
 	}
 }

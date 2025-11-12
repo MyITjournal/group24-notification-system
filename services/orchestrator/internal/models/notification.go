@@ -3,12 +3,12 @@ package models
 import "time"
 
 type NotificationRequest struct {
-	ID               string                 `json:"id" binding:"required"`
+	RequestID        string                 `json:"request_id" binding:"required"`
 	NotificationType NotificationType       `json:"notification_type" binding:"required,oneof=email push"`
 	UserID           string                 `json:"user_id" binding:"required"`
 	TemplateCode     string                 `json:"template_code" binding:"required"`
 	Variables        map[string]interface{} `json:"variables"`
-	Priority         string                 `json:"priority,omitempty"`
+	Priority         int                    `json:"priority,omitempty"`
 	ScheduledFor     *time.Time             `json:"scheduled_for,omitempty"`
 	Metadata         map[string]interface{} `json:"metadata,omitempty"`
 }

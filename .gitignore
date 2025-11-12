@@ -239,3 +239,6 @@ vendor/
 .DS_Store
 Thumbs.db
 notification-email-service
+
+
+plan.md

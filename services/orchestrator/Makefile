@@ -1,4 +1,4 @@
-.PHONY: help build run test clean docker-build docker-run
+.PHONY: help build run test clean docker-build docker-run kafka-up kafka-down kafka-topics kafka-test kafka-logs
 
 # Variables
 APP_NAME=orchestrator
@@ -17,6 +17,12 @@ help:
 	@echo "  make docker-build  - Build Docker image"
 	@echo "  make docker-run    - Run Docker container"
 	@echo "  make deps          - Download dependencies"
+	@echo ""
+	@echo "Kafka Commands:"
+	@echo "  make kafka-up      - Start Kafka with Docker Compose"
+	@echo "  make kafka-down    - Stop Kafka"
+	@echo "  make kafka-topics  - Create Kafka topics manually"
+	@echo "  make kafka-test    - Test Kafka connectivity"
 
 deps:
 	@echo "📦 Downloading dependencies..."
@@ -85,3 +91,27 @@ vet:
 test-integration:
 	@echo "🧪 Running integration tests..."
 	@./scripts/test-integration.sh
+
+# Kafka commands
+kafka-up:
+	@echo "🚀 Starting Kafka with Docker Compose..."
+	@cd ../.. && docker-compose -f docker-compose.kafka.yml up -d
+	@echo "⏳ Waiting for Kafka to be ready..."
+	@sleep 10
+	@echo "✓ Kafka should be ready. Run 'make kafka-test' to verify."
+
+kafka-down:
+	@echo "⏹️  Stopping Kafka..."
+	@cd ../.. && docker-compose -f docker-compose.kafka.yml down
+
+kafka-logs:
+	@echo "📋 Showing Kafka logs..."
+	@cd ../.. && docker-compose -f docker-compose.kafka.yml logs -f
+
+kafka-topics:
+	@echo "📝 Creating Kafka topics..."
+	@./scripts/setup-kafka-topics.sh
+
+kafka-test:
+	@echo "🧪 Testing Kafka connectivity..."
+	@./scripts/test-kafka.sh

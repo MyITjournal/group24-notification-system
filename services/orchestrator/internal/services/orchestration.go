@@ -7,6 +7,7 @@ import (
 
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/clients"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/models"
+	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/repository"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/pkg/kafka"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/pkg/logger"
 	"github.com/google/uuid"
@@ -14,20 +15,23 @@ import (
 )
 
 type OrchestrationService struct {
-	userClient     clients.UserClient
-	templateClient clients.TemplateClient
-	kafkaManager   *kafka.Manager
+	userClient       clients.UserClient
+	templateClient   clients.TemplateClient
+	kafkaManager     *kafka.Manager
+	notificationRepo repository.NotificationRepository
 }
 
 func NewOrchestrationService(
 	userClient clients.UserClient,
 	templateClient clients.TemplateClient,
 	kafkaManager *kafka.Manager,
+	notificationRepo repository.NotificationRepository,
 ) *OrchestrationService {
 	return &OrchestrationService{
-		userClient:     userClient,
-		templateClient: templateClient,
-		kafkaManager:   kafkaManager,
+		userClient:       userClient,
+		templateClient:   templateClient,
+		kafkaManager:     kafkaManager,
+		notificationRepo: notificationRepo,
 	}
 }
 
@@ -59,6 +63,34 @@ func (s *OrchestrationService) ProcessNotification(req *models.NotificationReque
 			zap.String("notification_type", string(req.NotificationType)),
 			zap.Error(err),
 		)
+
+		// Persist failed notification for audit trail
+		errorMsg := err.Error()
+		notificationRecord := &models.NotificationRecord{
+			ID:               notificationID,
+			UserID:           req.UserID,
+			TemplateCode:     req.TemplateCode,
+			NotificationType: string(req.NotificationType),
+			Status:           models.StatusFailed,
+			Priority:         s.getPriority(req.Priority),
+			Variables:        models.JSONB(req.Variables),
+			ScheduledFor:     req.ScheduledFor,
+			ErrorMessage:     &errorMsg,
+			CreatedAt:        time.Now(),
+			UpdatedAt:        time.Now(),
+		}
+		if req.Metadata != nil {
+			metadata := models.JSONB(req.Metadata)
+			notificationRecord.Metadata = &metadata
+		}
+
+		if persistErr := s.notificationRepo.Create(ctx, notificationRecord); persistErr != nil {
+			logger.Log.Error("Failed to persist failed notification record",
+				zap.String("notification_id", notificationID),
+				zap.Error(persistErr),
+			)
+		}
+
 		return &models.NotificationResponse{
 			NotificationID: notificationID,
 			Status:         models.StatusFailed,
@@ -81,13 +113,48 @@ func (s *OrchestrationService) ProcessNotification(req *models.NotificationReque
 		return nil, fmt.Errorf("failed to render template: %w", err)
 	}
 
-	// Step 4: Create and publish Kafka payload
+	// Step 4: Create notification record
+	notificationRecord := &models.NotificationRecord{
+		ID:               notificationID,
+		UserID:           req.UserID,
+		TemplateCode:     req.TemplateCode,
+		NotificationType: string(req.NotificationType),
+		Status:           models.StatusPending,
+		Priority:         s.getPriority(req.Priority),
+		Variables:        models.JSONB(req.Variables),
+		ScheduledFor:     req.ScheduledFor,
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+	}
+
+	if req.Metadata != nil {
+		metadata := models.JSONB(req.Metadata)
+		notificationRecord.Metadata = &metadata
+	}
+
+	// Persist notification record (even if Kafka publish fails, we want audit trail)
+	if err := s.notificationRepo.Create(ctx, notificationRecord); err != nil {
+		logger.Log.Error("Failed to persist notification record",
+			zap.String("notification_id", notificationID),
+			zap.Error(err),
+		)
+		// Continue processing even if persistence fails, but log the error
+	}
+
+	// Step 5: Create and publish Kafka payload
 	payload := s.createKafkaPayload(notificationID, req, rendered)
 	if err := s.publishToKafka(ctx, req.NotificationType, notificationID, payload); err != nil {
 		logger.Log.Error("Failed to publish to Kafka",
 			zap.String("notification_id", notificationID),
 			zap.Error(err),
 		)
+		// Update status to failed if Kafka publish fails
+		if updateErr := s.notificationRepo.UpdateStatus(ctx, notificationID, models.StatusFailed, err.Error()); updateErr != nil {
+			logger.Log.Error("Failed to update notification status after Kafka error",
+				zap.String("notification_id", notificationID),
+				zap.Error(updateErr),
+			)
+		}
 		return nil, fmt.Errorf("failed to queue notification: %w", err)
 	}
 
@@ -171,9 +238,29 @@ func (s *OrchestrationService) validateChannelPreferences(
 	return nil
 }
 
-func (s *OrchestrationService) getPriority(priority string) string {
-	if priority == "" {
+func (s *OrchestrationService) getPriority(priority int) string {
+	// Map integer priority to string values
+	// 0 or unset = normal, 1 = low, 2 = normal, 3 = high, 4 = urgent
+	if priority == 0 {
 		return "normal"
 	}
-	return priority
+
+	priorityMap := map[int]string{
+		1: "low",
+		2: "normal",
+		3: "high",
+		4: "urgent",
+	}
+
+	if val, ok := priorityMap[priority]; ok {
+		return val
+	}
+
+	// Default to normal for unknown values
+	return "normal"
+}
+
+// UpdateNotificationStatus updates the status of a notification in the database
+func (s *OrchestrationService) UpdateNotificationStatus(ctx context.Context, notificationID string, status models.NotificationStatus, errorMsg string) error {
+	return s.notificationRepo.UpdateStatus(ctx, notificationID, status, errorMsg)
 }

@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    hostname: zookeeper
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    hostname: kafka
+    container_name: kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false' # We'll create topics manually for better control
+      KAFKA_LOG_RETENTION_HOURS: 168 # 7 days
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824 # 1GB
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      # Wait for Kafka to be ready
+      echo 'Waiting for Kafka to be ready...'
+      cub kafka-ready -b kafka:9093 1 30
+
+      # Create topics
+      echo 'Creating topics...'
+      
+      # Email queue topic
+      kafka-topics --create --if-not-exists \
+        --bootstrap-server kafka:9093 \
+        --topic email.queue \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config retention.ms=604800000 \
+        --config segment.ms=86400000
+
+      # Push queue topic
+      kafka-topics --create --if-not-exists \
+        --bootstrap-server kafka:9093 \
+        --topic push.queue \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config retention.ms=604800000 \
+        --config segment.ms=86400000
+
+      # Dead letter queue topic
+      kafka-topics --create --if-not-exists \
+        --bootstrap-server kafka:9093 \
+        --topic failed.queue \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config retention.ms=2592000000 \
+        --config segment.ms=86400000
+
+      # List all topics
+      echo 'Topics created:'
+      kafka-topics --list --bootstrap-server kafka:9093
+
+      echo 'Kafka setup complete!'
+      "
+

@@ -36,12 +36,10 @@ func (h *UserHandler) Create(c *gin.Context) {
 			zap.String("request_id", requestID.(string)),
 			zap.Error(err),
 		)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": gin.H{
-				"success": false,
-				"message": "Invalid request payload for user creation",
-				"error":   gin.H{"validation_error": err.Error()},
-			},
+		c.JSON(http.StatusBadRequest, models.Response{
+			Success: false,
+			Message: "Invalid request payload for user creation",
+			Error:   err.Error(),
 		})
 		return
 	}
@@ -61,10 +59,10 @@ func (h *UserHandler) Create(c *gin.Context) {
 	duration := time.Since(startTime)
 	c.Header("X-Response-Time", duration.String())
 
-	c.JSON(http.StatusCreated, gin.H{
-		"success": true,
-		"message": fmt.Sprintf("User registration successful. User ID: %s. Handed off to User Service.", newUserID),
-		"data": gin.H{
+	c.JSON(http.StatusCreated, models.Response{
+		Success: true,
+		Message: fmt.Sprintf("User registration successful. User ID: %s. Handed off to User Service.", newUserID),
+		Data: gin.H{
 			"name":        req.Name,
 			"email":       req.Email,
 			"push_token":  req.PushToken,
