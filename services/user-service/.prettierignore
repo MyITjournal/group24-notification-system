@@ -1,0 +1,13 @@
+# Dependencies
+node_modules
+dist
+coverage
+
+# Manual test scripts
+test/manual/**/*.js
+
+# Build artifacts
+*.tsbuildinfo
+
+# Logs
+*.log
