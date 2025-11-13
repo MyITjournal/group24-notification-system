@@ -1,10 +1,10 @@
 from django.urls import path
 from .views import (
     HealthCheckView,
-    TemplateCreateView,
     TemplateDetailView,
     TemplateRenderView,
-    TemplateBatchRenderView
+    TemplateBatchRenderView,
+    TemplateListCreateView
 )
 
 urlpatterns = [
@@ -12,8 +12,7 @@ urlpatterns = [
     path("health/", HealthCheckView.as_view(), name="health-check"),
 
     # Create a template
-    path("templates/", TemplateCreateView.as_view(), name="template-create"),
-
+    path("templates/", TemplateListCreateView.as_view(), name="template-list-create"),
     # Get template by ID or name
     path("templates/<str:template_id>/", TemplateDetailView.as_view(), name="template-detail"),
 
