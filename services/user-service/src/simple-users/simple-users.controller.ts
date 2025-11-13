@@ -29,13 +29,15 @@ export class SimpleUsersController {
     try {
       return await this.simpleUsersService.getAllUsers();
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
       throw new HttpException(
         {
           error: {
             code: 'USERS_FETCH_FAILED',
             message: 'Failed to fetch users',
             details: {
-              error: error.message,
+              error: errorMessage,
             },
           },
         },
@@ -52,7 +54,8 @@ export class SimpleUsersController {
     try {
       return await this.simpleUsersService.createUser(input);
     } catch (error) {
-      if (error.code === '23505') {
+      const err = error as { code?: string; message?: string };
+      if (err.code === '23505') {
         // Unique constraint violation (email already exists)
         throw new HttpException(
           {
@@ -68,13 +71,14 @@ export class SimpleUsersController {
         );
       }
 
+      const errorMessage = err.message ?? 'Unknown error';
       throw new HttpException(
         {
           error: {
             code: 'USER_CREATION_FAILED',
             message: 'Failed to create user',
             details: {
-              error: error.message,
+              error: errorMessage,
             },
           },
         },
@@ -94,7 +98,8 @@ export class SimpleUsersController {
         throw error;
       }
 
-      if (error.status === 404 || error.message?.includes('USER_NOT_FOUND')) {
+      const err = error as { status?: number; message?: string };
+      if (err.status === 404 || err.message?.includes('USER_NOT_FOUND')) {
         throw new HttpException(
           {
             error: {
@@ -109,13 +114,14 @@ export class SimpleUsersController {
         );
       }
 
+      const errorMessage = err.message ?? 'Unknown error';
       throw new HttpException(
         {
           error: {
             code: 'PREFERENCES_FETCH_FAILED',
             message: 'Failed to fetch user preferences',
             details: {
-              error: error.message,
+              error: errorMessage,
             },
           },
         },
@@ -153,13 +159,15 @@ export class SimpleUsersController {
         throw error;
       }
 
+      const err = error as { message?: string };
+      const errorMessage = err.message ?? 'Unknown error';
       throw new HttpException(
         {
           error: {
             code: 'BATCH_FETCH_FAILED',
             message: 'Failed to fetch batch user preferences',
             details: {
-              error: error.message,
+              error: errorMessage,
             },
           },
         },
@@ -170,10 +178,10 @@ export class SimpleUsersController {
 
   @Post(':user_id/last-notification')
   @HttpCode(204)
-  async updateLastNotification(
+  updateLastNotification(
     @Param('user_id') userId: string,
     @Body() input: UpdateLastNotificationInput,
-  ): Promise<void> {
+  ): void {
     // Fire-and-forget - don't wait for completion
     this.simpleUsersService
       .updateLastNotificationTime(userId, input)
@@ -217,7 +225,8 @@ export class SimpleUsersController {
         throw error;
       }
 
-      if (error.status === 404 || error.message?.includes('USER_NOT_FOUND')) {
+      const err = error as { status?: number; message?: string };
+      if (err.status === 404 || err.message?.includes('USER_NOT_FOUND')) {
         throw new HttpException(
           {
             error: {
@@ -232,13 +241,14 @@ export class SimpleUsersController {
         );
       }
 
+      const errorMessage = err.message ?? 'Unknown error';
       throw new HttpException(
         {
           error: {
             code: 'PREFERENCES_UPDATE_FAILED',
             message: 'Failed to update user preferences',
             details: {
-              error: error.message,
+              error: errorMessage,
             },
           },
         },

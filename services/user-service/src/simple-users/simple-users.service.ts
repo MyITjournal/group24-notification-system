@@ -63,7 +63,9 @@ export class SimpleUsersService {
     userId: string,
   ): Promise<SimpleUserPreferencesResponse> {
     // Try to get from cache first
-    const cached = await this.cacheService.getUserPreferences(userId);
+    const cached = (await this.cacheService.getUserPreferences(
+      userId,
+    )) as SimpleUserPreferencesResponse | null;
     if (cached) {
       console.log(`Cache HIT for user preferences: ${userId}`);
       return cached;
@@ -159,10 +161,11 @@ export class SimpleUsersService {
     }
 
     // Combine cached and database results
-    const allUsers = [
-      ...Array.from(cachedPreferences.values()),
-      ...Array.from(dbUsersMap.values()),
-    ];
+    const cachedUsers = Array.from(
+      cachedPreferences.values(),
+    ) as SimpleUserPreferencesResponse[];
+    const dbUsers = Array.from(dbUsersMap.values());
+    const allUsers = [...cachedUsers, ...dbUsers];
 
     // Find not found user IDs
     const foundUserIds = new Set(allUsers.map((u) => u.user_id));

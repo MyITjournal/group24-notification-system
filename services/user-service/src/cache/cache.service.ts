@@ -53,12 +53,14 @@ export class CacheService {
    * @param userIds - Array of user IDs
    * @returns Map of userId -> cached preferences (only for users found in cache)
    */
-  async getBatchUserPreferences(userIds: string[]): Promise<Map<string, any>> {
-    const result = new Map<string, any>();
+  async getBatchUserPreferences(
+    userIds: string[],
+  ): Promise<Map<string, unknown>> {
+    const result = new Map<string, unknown>();
 
     await Promise.all(
       userIds.map(async (userId) => {
-        const cached = await this.getUserPreferences(userId);
+        const cached = (await this.getUserPreferences(userId)) as unknown;
         if (cached) {
           result.set(userId, cached);
         }
@@ -74,7 +76,7 @@ export class CacheService {
    * @param ttl - Optional TTL in seconds
    */
   async setBatchUserPreferences(
-    preferencesMap: Map<string, any>,
+    preferencesMap: Map<string, unknown>,
     ttl?: number,
   ): Promise<void> {
     await Promise.all(
@@ -101,8 +103,11 @@ export class CacheService {
    */
   async clearAll(): Promise<void> {
     // The store property might not have reset method in all implementations
-    if (typeof (this.cacheManager as any).reset === 'function') {
-      await (this.cacheManager as any).reset();
+    const manager = this.cacheManager as unknown as {
+      reset?: () => Promise<void>;
+    };
+    if (typeof manager.reset === 'function') {
+      await manager.reset();
     } else {
       console.warn('Cache store does not support reset operation');
     }
