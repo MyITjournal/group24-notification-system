@@ -2,7 +2,7 @@ import json
 from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status,generics
 from django.conf import settings
 from .models import Template
 from .serializers import (
@@ -15,6 +15,8 @@ from .jinja_renderer import render_jinja  # keep your renderer; used for actual 
 from .kafka_producer import send_render_request  # optional; wrapped safely
 from dateutil.parser import parse as parse_date
 from typing import Tuple, List, Dict
+import logging
+logger = logging.getLogger(__name__)
 
 
 # ---------- Helpers ----------
@@ -150,7 +152,7 @@ class HealthCheckView(APIView):
             "kafka": kafka_status
         })
 
-
+''''
 class TemplateCreateView(APIView):
     def post(self, request):
         serializer = TemplateCreateSerializer(data=request.data)
@@ -161,6 +163,69 @@ class TemplateCreateView(APIView):
         return Response(resp, status=status.HTTP_201_CREATED)
 
 
+class TemplateListView(generics.ListAPIView):
+    serializer_class = TemplateResponseSerializer
+
+    def get_queryset(self):
+        queryset = Template.objects.all().order_by("-created_at")
+        logger.info(f"Total templates found: {queryset.count()}")
+
+        language = self.request.query_params.get("language")
+        template_type = self.request.query_params.get("type")
+
+        if language:
+            queryset = queryset.filter(language=language)
+        if template_type:
+            queryset = queryset.filter(type=template_type)
+
+        return queryset
+'''
+
+class TemplateListCreateView(generics.ListCreateAPIView):
+    """
+    Handles both:
+    - GET /api/v1/templates/ → List templates
+    - POST /api/v1/templates/ → Create a template
+    """
+    serializer_class = TemplateCreateSerializer  # default serializer for POST
+    queryset = Template.objects.none()  # just a placeholder
+
+    def get_serializer_class(self):
+        # Use a different serializer for GET (response formatting)
+        if self.request.method == "GET":
+            return TemplateResponseSerializer
+        return TemplateCreateSerializer
+
+    def get_queryset(self):
+        queryset = Template.objects.all().order_by("-created_at")
+        logger.info(f"Total templates found: {queryset.count()}")
+
+        language = self.request.query_params.get("language")
+        template_type = self.request.query_params.get("type")
+
+        if language:
+            queryset = queryset.filter(language=language)
+        if template_type:
+            queryset = queryset.filter(type=template_type)
+
+        return queryset
+
+    def list(self, request, *args, **kwargs):
+        """Custom GET response using response serializer."""
+        queryset = self.get_queryset()  # ✅ always use get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def create(self, request, *args, **kwargs):
+        """Custom POST logic (create template)."""
+        serializer = TemplateCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        obj = serializer.save()
+        resp = format_template_response(obj)
+        return Response(resp, status=status.HTTP_201_CREATED)
+    
+    
 class TemplateDetailView(APIView):
     def get(self, request, template_id):
         # support template_id as string name or UUID
