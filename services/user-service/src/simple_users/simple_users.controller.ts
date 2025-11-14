@@ -9,7 +9,7 @@ import {
   HttpCode,
   Patch,
 } from '@nestjs/common';
-import { SimpleUsersService } from './simple-users.service';
+import { SimpleUsersService } from './simple_users.service';
 import {
   CreateSimpleUserInput,
   SimpleUserResponse,
@@ -18,7 +18,7 @@ import {
   BatchGetSimpleUserPreferencesResponse,
   UpdateLastNotificationInput,
   UpdateSimpleUserPreferencesInput,
-} from './dto/simple-user.dto';
+} from './dto/simple_user.dto';
 
 @Controller('api/v1/users')
 export class SimpleUsersController {

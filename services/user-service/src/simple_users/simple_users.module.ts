@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { SimpleUsersController } from './simple-users.controller';
-import { SimpleUsersService } from './simple-users.service';
-import { SimpleUser } from './entity/simple-user.entity';
-import { CacheModule } from '../cache/cache.module';
+import { SimpleUsersController } from './simple_users.controller';
+import { SimpleUsersService } from './simple_users.service';
+import { SimpleUser } from './entity/simple_user.entity';
+import { CacheModule } from '../cache/cache_module';
 
 @Module({
   imports: [TypeOrmModule.forFeature([SimpleUser]), CacheModule],

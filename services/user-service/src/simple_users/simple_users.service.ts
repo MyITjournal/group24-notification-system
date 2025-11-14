@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
-import { SimpleUser } from './entity/simple-user.entity';
+import { SimpleUser } from './entity/simple_user.entity';
 import {
   CreateSimpleUserInput,
   SimpleUserResponse,
@@ -10,9 +10,9 @@ import {
   BatchGetSimpleUserPreferencesResponse,
   UpdateLastNotificationInput,
   UpdateSimpleUserPreferencesInput,
-} from './dto/simple-user.dto';
+} from './dto/simple_user.dto';
 import * as bcrypt from 'bcrypt';
-import { CacheService } from '../cache/cache.service';
+import { CacheService } from '../cache/cache_service';
 
 @Injectable()
 export class SimpleUsersService {

@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { SimpleUsersModule } from './simple-users/simple-users.module';
-import { HealthModule } from './health/health.module';
-import { CacheModule } from './cache/cache.module';
+import { SimpleUsersModule } from './simple_users/simple_users.module';
+import { HealthModule } from './health/health_module';
+import { CacheModule } from './cache/cache_module';
 
 @Module({
   imports: [
