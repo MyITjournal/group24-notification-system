@@ -6,7 +6,7 @@ const testBothModules = async () => {
   try {
     const email = 'test' + Date.now() + '@example.com';
     console.log('1. Creating simple user...');
-    const createResponse = await fetch('http://localhost:8000/api/v1/users', {
+    const createResponse = await fetch('http://localhost:8081/api/v1/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -25,7 +25,7 @@ const testBothModules = async () => {
     // 2. Get simple user preferences
     console.log('\n2. Getting simple user preferences...');
     const prefsResponse = await fetch(
-      `http://localhost:8000/api/v1/users/${userId}/preferences`,
+      `http://localhost:8081/api/v1/users/${userId}/preferences`,
     );
     const prefsData = await prefsResponse.json();
     console.log(`✓ Status: ${prefsResponse.status}`);
@@ -34,7 +34,7 @@ const testBothModules = async () => {
     // 3. Batch get preferences
     console.log('\n3. Batch getting simple user preferences...');
     const batchResponse = await fetch(
-      'http://localhost:8000/api/v1/users/preferences/batch',
+      'http://localhost:8081/api/v1/users/preferences/batch',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -48,7 +48,7 @@ const testBothModules = async () => {
     // 4. Update last notification
     console.log('\n4. Updating last notification...');
     const notifResponse = await fetch(
-      `http://localhost:8000/api/v1/users/${userId}/last-notification`,
+      `http://localhost:8081/api/v1/users/${userId}/last-notification`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

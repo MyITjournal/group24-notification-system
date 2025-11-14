@@ -12,6 +12,51 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
+// ============ Response Wrapper DTOs ============
+
+export interface PaginationMeta {
+  total: number;
+  limit: number;
+  page: number;
+  total_pages: number;
+  has_next: boolean;
+  has_previous: boolean;
+}
+
+export class ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message: string;
+  meta?: PaginationMeta | null;
+
+  constructor(
+    success: boolean,
+    message: string,
+    data?: T,
+    error?: string,
+    meta?: PaginationMeta | null,
+  ) {
+    this.success = success;
+    this.message = message;
+    this.data = data;
+    this.error = error;
+    this.meta = meta || null;
+  }
+
+  static success<T>(
+    message: string,
+    data?: T,
+    meta?: PaginationMeta,
+  ): ApiResponse<T> {
+    return new ApiResponse(true, message, data, undefined, meta);
+  }
+
+  static error<T = any>(message: string, error?: string): ApiResponse<T> {
+    return new ApiResponse(false, message, undefined as any, error, null);
+  }
+}
+
 // ============ Preferences DTOs ============
 
 export class SimpleUserPreferenceDto {

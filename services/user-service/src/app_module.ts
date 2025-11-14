@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { SimpleUsersModule } from './simple_users/simple_users.module';
 import { HealthModule } from './health/health_module';
 import { CacheModule } from './cache/cache_module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { CacheModule } from './cache/cache_module';
     }),
 
     SimpleUsersModule,
+    AuthModule,
     HealthModule,
   ],
 })

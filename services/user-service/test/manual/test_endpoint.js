@@ -1,7 +1,7 @@
 // Simple test script to debug the endpoint
 const testEndpoint = async () => {
   try {
-    const response = await fetch('http://localhost:8000/api/v1/users', {
+    const response = await fetch('http://localhost:8081/api/v1/users', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

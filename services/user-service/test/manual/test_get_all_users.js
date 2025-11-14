@@ -6,7 +6,7 @@ const testGetAllUsers = async () => {
     // First, create a couple of test users
     console.log('1. Creating test users...');
 
-    const user1 = await fetch('http://localhost:8000/api/v1/users', {
+    const user1 = await fetch('http://localhost:8081/api/v1/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -19,7 +19,7 @@ const testGetAllUsers = async () => {
     const user1Data = await user1.json();
     console.log('✓ Created user 1:', user1Data.name, user1Data.email);
 
-    const user2 = await fetch('http://localhost:8000/api/v1/users', {
+    const user2 = await fetch('http://localhost:8081/api/v1/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -34,7 +34,7 @@ const testGetAllUsers = async () => {
 
     // Now get all users
     console.log('\n2. Fetching all users...');
-    const response = await fetch('http://localhost:8000/api/v1/users');
+    const response = await fetch('http://localhost:8081/api/v1/users');
 
     if (response.ok) {
       const users = await response.json();

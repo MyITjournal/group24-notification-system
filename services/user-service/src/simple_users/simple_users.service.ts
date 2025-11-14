@@ -22,6 +22,12 @@ export class SimpleUsersService {
     private readonly cacheService: CacheService,
   ) {}
 
+  async getUserByEmail(email: string): Promise<SimpleUser | null> {
+    return await this.simpleUserRepository.findOne({
+      where: { email },
+    });
+  }
+
   async createUser(input: CreateSimpleUserInput): Promise<SimpleUserResponse> {
     console.log('SimpleUsersService.createUser called with:', input);
 
@@ -217,14 +223,20 @@ export class SimpleUsersService {
       });
   }
 
-  async getAllUsers(): Promise<SimpleUserPreferencesResponse[]> {
-    const users = await this.simpleUserRepository.find({
+  async getAllUsers(
+    page: number,
+    limit: number,
+  ): Promise<{ users: SimpleUserPreferencesResponse[]; total: number }> {
+    // Use findAndCount for pagination
+    const [users, total] = await this.simpleUserRepository.findAndCount({
       order: {
         created_at: 'DESC',
       },
+      skip: (page - 1) * limit,
+      take: limit,
     });
 
-    return users.map((user) => ({
+    const mappedUsers = users.map((user) => ({
       user_id: user.user_id,
       email: user.email,
       preferences: {
@@ -236,6 +248,11 @@ export class SimpleUsersService {
       last_notification_id: user.last_notification_id,
       updated_at: user.updated_at,
     }));
+
+    return {
+      users: mappedUsers,
+      total,
+    };
   }
 
   async updateUserPreferences(

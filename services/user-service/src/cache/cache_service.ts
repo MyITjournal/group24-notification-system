@@ -121,4 +121,38 @@ export class CacheService {
   private getUserPreferencesCacheKey(userId: string): string {
     return `user:preferences:${userId}`;
   }
+
+  /**
+   * Get idempotent response from cache
+   * @param requestId - The unique request ID
+   * @returns Cached response or null if not found
+   */
+  async getIdempotentResponse(requestId: string): Promise<any> {
+    const cacheKey = this.getIdempotencyKey(requestId);
+    return await this.cacheManager.get(cacheKey);
+  }
+
+  /**
+   * Set idempotent response in cache
+   * @param requestId - The unique request ID
+   * @param response - The response data to cache
+   * @param ttl - TTL in seconds (default: 24 hours)
+   */
+  async setIdempotentResponse(
+    requestId: string,
+    response: any,
+    ttl: number = 86400,
+  ): Promise<void> {
+    const cacheKey = this.getIdempotencyKey(requestId);
+    await this.cacheManager.set(cacheKey, response, ttl * 1000);
+  }
+
+  /**
+   * Generate cache key for idempotency
+   * @param requestId - The unique request ID
+   * @returns Cache key string
+   */
+  private getIdempotencyKey(requestId: string): string {
+    return `idempotency:${requestId}`;
+  }
 }
