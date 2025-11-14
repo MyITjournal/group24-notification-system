@@ -34,7 +34,10 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async validateUser(email: string, password: string): Promise<any> {
+  async validateUser(
+    email: string,
+    password: string,
+  ): Promise<Omit<any, 'password'> | null> {
     try {
       const user = await this.simpleUsersService.getUserByEmail(email);
 
@@ -49,9 +52,10 @@ export class AuthService {
       }
 
       // Return user without password
-      const { password: _, ...result } = user;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { password: _password, ...result } = user;
       return result;
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -68,10 +72,17 @@ export class AuthService {
       });
     }
 
+    // Type guard: validateUser returns user object with required fields
+    const validatedUser = user as {
+      user_id: string;
+      email: string;
+      name: string;
+    };
+
     const payload: JwtPayload = {
-      sub: user.user_id,
-      email: user.email,
-      name: user.name,
+      sub: validatedUser.user_id,
+      email: validatedUser.email,
+      name: validatedUser.name,
     };
 
     const access_token = this.jwtService.sign(payload);
@@ -81,17 +92,17 @@ export class AuthService {
       token_type: 'Bearer',
       expires_in: 86400, // 24 hours in seconds
       user: {
-        user_id: user.user_id,
-        name: user.name,
-        email: user.email,
+        user_id: validatedUser.user_id,
+        name: validatedUser.name,
+        email: validatedUser.email,
       },
     };
   }
 
-  async verifyToken(token: string): Promise<JwtPayload> {
+  verifyToken(token: string): JwtPayload {
     try {
       return this.jwtService.verify<JwtPayload>(token);
-    } catch (error) {
+    } catch {
       throw new UnauthorizedException({
         success: false,
         error: 'INVALID_TOKEN',

@@ -95,7 +95,7 @@ export class SimpleUsersController {
 
     // Check for idempotency if request ID is provided
     if (requestId) {
-      const cachedResponse =
+      const cachedResponse: unknown =
         await this.cacheService.getIdempotentResponse(requestId);
       if (cachedResponse) {
         console.log(`Idempotent request detected: ${requestId}`);
@@ -180,7 +180,7 @@ export class SimpleUsersController {
   ): Promise<ApiResponse<BatchGetSimpleUserPreferencesResponse>> {
     // Check for idempotency if request ID is provided
     if (requestId) {
-      const cachedResponse =
+      const cachedResponse: unknown =
         await this.cacheService.getIdempotentResponse(requestId);
       if (cachedResponse) {
         console.log(`Idempotent request detected: ${requestId}`);

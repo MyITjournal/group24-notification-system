@@ -13,7 +13,7 @@ import { SimpleUsersModule } from '../simple_users/simple_users.module';
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
+      useFactory: (configService: ConfigService) => ({
         secret:
           configService.get<string>('JWT_SECRET') ||
           'your-secret-key-change-in-production',
